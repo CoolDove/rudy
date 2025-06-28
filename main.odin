@@ -26,8 +26,9 @@ main :: proc() {
 
 	console_begin()
 	args_read(
-		{argr_follow_by("-s"), arga_set(&args.search)},
-		{argr_any(), arga_set(&args.word)}
+		{argr_follow_by("-d"), arga_set(&args.word)},
+		{argr_follow_by("-д"), arga_set(&args.word)}, // in case you're using cyrillic
+		{argr_any(), arga_set(&args.search)}
 	)
 
 	if args.search != {} {

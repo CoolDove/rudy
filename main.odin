@@ -8,6 +8,7 @@ import "core:text/regex"
 import "core:strings"
 import "core:strconv"
 import "core:math"
+import "core:encoding/entity"
 import "core:encoding/json"
 import "core:encoding/base64"
 
@@ -66,15 +67,17 @@ translate :: proc(word: string) -> bool {
 	source = string_sub_after(source, "<main")
 	source = string_sub_before(source, "</main>", true)
 
-	section_basics := string_sub_after(source, "<div class=\"section basics\"")
-	section_basics = string_sub_before(section_basics, "<div class=\"section translations")
+	section_basics : string
+	if cap_sec_basics, ok := regex_match_scoped("<div class=\"section basics\">(.*?)<div class=\"section", source); ok {
+		section_basics = cap_sec_basics.groups[1]
+	} else do return false
 
 	if section_basics != {} {
 		ansi.color_ansi(.Yellow)
 		if capword, ok := regex_match_scoped("class=\"bare.*?<span>(.*?)</span>", section_basics); ok {
-			fmt.printf("> {} \n", capword.groups[1])
+			fmt.printf("  {} \n", capword.groups[1])
 		} else {
-			fmt.printf("> {} \n", word)
+			fmt.printf("  {} \n", word)
 		}
 		ansi.color_ansi(.Default)
 		if capoverview, ok := regex_match_scoped("class=\"overview\">(.*?)</div>", section_basics); ok {
@@ -87,33 +90,32 @@ translate :: proc(word: string) -> bool {
 		}
 	} else do return false
 
-	fmt.print("\n")
-	section_translations := string_sub_after(source, "<div class=\"section translations\"")
-	section_translations = string_sub_before(section_translations, "<div class=\"section sentences")
+	fmt.print("---\n")
 
-	if capture, ok := regex_match_scoped("<ul>(.*?)</ul>", section_translations); ok {
-		remainstr := capture.groups[1]
-		idx := 0
-		for true {
-			defer idx += 1
-			if captureli, ok := regex_match_scoped("<li>(.*?)</li>", remainstr); ok {
-				defer remainstr = remainstr[captureli.pos[0].y:]
+	section_trls : string
+	if cap_sec_trls, ok := regex_match_scoped("<div class=\"section translations\">(.*?)<div class=\"section", source); ok {
+		section_trls = cap_sec_trls.groups[1]
+	} else do return false
 
-				listr := captureli.groups[1]
-				if capturetrans, ok := regex_match_scoped("class=\"content\".*<p class=\"tl\">(.*?)</p>", listr); ok {
+	if capture, ok := regex_match_scoped("<ul>(.*?)</ul>", section_trls); ok {
+		ite_trls, err := regex.create_iterator(capture.groups[1], "<li>.*?<div class=\"content\">(.*?)</div></li>")
+		trl_idx := 0
+		for trls, trls_idx in regex.match_iterator(&ite_trls) {
+			defer trl_idx += 1
+			ite_trlc, err := regex.create_iterator(trls.groups[1], "<p class=\"(.*?)\">(.*?)</p>")
+			for it, idx in regex.match_iterator(&ite_trlc) {
+				type := it.groups[1]
+				text := it.groups[2]
+				text, _ = entity.decode_xml(text, allocator=context.temp_allocator)
+				text, _ = strings.replace_all(text, "<!-- -->", "", context.temp_allocator)
+				if type == "tl" {
 					ansi.color_ansi(.Cyan)
-					fmt.printf(" {}. {}\n", idx+1, capturetrans.groups[1])
-					if also, ok := regex_match_scoped("class=\"tl-also\">(.*?)</p>", listr); ok {
-						if alsostr, ok2 := regex_match_scoped("(\\w+)<.*?:.*?-->(.*)", also.groups[1]); ok2 {
-							fmt.printf("\t{}: {}\n", alsostr.groups[1], alsostr.groups[2])
-						}
-					}
+					fmt.printf(" {}. {}\n", trl_idx+1, text)
 					ansi.color_ansi(.Default)
-				}
-				fmt.print("\n")
-			} else {
-				break
+				} else if type == "tl-also" do fmt.printf("\tAlso: {}\n", text)
+				else do fmt.printf("\t{}\n", text)
 			}
+			fmt.print("---\n")
 		}
 	}
 

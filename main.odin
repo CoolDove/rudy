@@ -11,8 +11,7 @@ import "core:math"
 import "core:encoding/json"
 import "core:encoding/base64"
 
-import "ohtml"
-
+import ansi "ansi_code"
 
 Args :: struct {
 	search, word : string,
@@ -70,12 +69,18 @@ translate :: proc(word: string) -> bool {
 	section_basics = string_sub_before(section_basics, "<div class=\"section translations")
 
 	if section_basics != {} {
-		fmt.printf("- {} -\n", word)
+		ansi.color_ansi(.Yellow)
+		if capword, ok := regex_match_scoped("class=\"bare.*?<span>(.*?)</span>", section_basics); ok {
+			fmt.printf("> {} \n", capword.groups[1])
+		} else {
+			fmt.printf("> {} \n", word)
+		}
+		ansi.color_ansi(.Default)
 		if capoverview, ok := regex_match_scoped("class=\"overview\">(.*?)</div>", section_basics); ok {
 			it, _ := regex.create_iterator(capoverview.groups[1], "<p>(.*?)</p>")
 			for capture, idx in regex.match_iterator(&it) {
 				line := capture.groups[1]
-				if strings.starts_with(line, "<a") do continue
+				if strings.contains(line, "</a>") do continue
 				fmt.printf("\t{}\n", line)
 			}
 		}
@@ -95,12 +100,14 @@ translate :: proc(word: string) -> bool {
 
 				listr := captureli.groups[1]
 				if capturetrans, ok := regex_match_scoped("class=\"content\".*<p class=\"tl\">(.*?)</p>", listr); ok {
+					ansi.color_ansi(.Cyan)
 					fmt.printf(" {}. {}\n", idx+1, capturetrans.groups[1])
 					if also, ok := regex_match_scoped("class=\"tl-also\">(.*?)</p>", listr); ok {
 						if alsostr, ok2 := regex_match_scoped("(\\w+)<.*?:.*?-->(.*)", also.groups[1]); ok2 {
 							fmt.printf("\t{}: {}\n", alsostr.groups[1], alsostr.groups[2])
 						}
 					}
+					ansi.color_ansi(.Default)
 				}
 				fmt.print("\n")
 			} else {
@@ -147,7 +154,13 @@ search :: proc(word: string) -> bool {
 	for match in jmatch.(json.Array) {
 		defer idx += 1
 		jword := match.(json.Object)["word"].(json.Object)
-		fmt.printf(" {}. {} [{}]\n", idx+1, jword["ru"], jword["type"])
+		fmt.printf(" {}. ", idx+1)
+		ansi.color_ansi(.Yellow)
+		word_stressed, _ := strings.replace_all(jword["ru"].(json.String), "\'", "\u0301")
+		fmt.print(word_stressed)
+		ansi.color_ansi(.Default)
+		fmt.printf(" [{}]\n", jword["type"])
+
 		tls := jword["tls"].(json.Array)
 		for tl in tls {
 			fmt.printf("\t‣ ")
@@ -160,15 +173,6 @@ search :: proc(word: string) -> bool {
 	}
 
 	return true
-}
-ohtml_format :: proc(e: ^ohtml.Element, depth:= 0) {
-	for i in 0..<depth do fmt.print(' ')
-	fmt.printf("[{}]. : {}\n", e.type, e.text)
-	for c in e.children {
-		ohtml_format(c, depth+1)
-	}
-	for i in 0..<depth do fmt.print(' ')
-	fmt.printf("[/{}].", e.type)
 }
 
 @(deferred_out=_destroy_capture)

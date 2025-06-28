@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:log"
 import "core:os"
+import "core:io"
 import "core:os/os2"
 import "core:text/regex"
 import "core:strings"
@@ -19,18 +20,22 @@ Args :: struct {
 }
 args : Args
 
+options : [dynamic]string
+
 main :: proc() {
 	logger := log.create_console_logger()
 	defer log.destroy_console_logger(logger)
 	context.logger = logger
 	pwd := os.get_current_directory(); defer delete(pwd)
 
-	console_begin()
+	console_begin(); defer console_end()
 	args_read(
 		{argr_follow_by("-d"), arga_set(&args.word)},
 		{argr_follow_by("-д"), arga_set(&args.word)}, // in case you're using cyrillic
 		{argr_any(), arga_set(&args.search)}
 	)
+
+	options = make([dynamic]string); defer delete(options)
 
 	if args.search != {} {
 		if !search(args.search) {
@@ -158,6 +163,10 @@ search :: proc(word: string) -> bool {
 		fmt.printf(" {}. ", idx+1)
 		ansi.color_ansi(.Yellow)
 		word_stressed, _ := strings.replace_all(jword["ru"].(json.String), "\'", "\u0301")
+
+		word_plain, _ := strings.remove_all(jword["ru"].(json.String), "\'", context.temp_allocator)
+		append(&options, word_plain)
+
 		fmt.print(word_stressed)
 		ansi.color_ansi(.Default)
 		fmt.printf(" [{}]\n", jword["type"])
@@ -169,6 +178,19 @@ search :: proc(word: string) -> bool {
 				fmt.print(tlp.(json.String))
 				if idx == len(tl.(json.Array))-1 do fmt.print("\n")
 				else do fmt.print(", ")
+			}
+		}
+	}
+
+	{
+		in_stream := os.stream_from_handle(os.stdin)
+		ch, sz, err := io.read_rune(in_stream)
+		if ch > '0' && ch <= '9' {
+			idx := cast(int)(ch - '0')
+			idx -= 1
+			if idx < len(options) {
+				fmt.printf("detail {} - {}\n\n", ch, options[idx])
+				translate(options[idx])
 			}
 		}
 	}

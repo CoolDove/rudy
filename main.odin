@@ -93,12 +93,9 @@ translate :: proc(word: string) -> bool {
 	fmt.print("---\n")
 
 	section_trls : string
-	if cap_sec_trls, ok := regex_match_scoped("<div class=\"section translations\">(.*?)<div class=\"section", source); ok {
+	if cap_sec_trls, ok := regex_match_scoped("<div class=\"section translations\">.*?<ul>(.*?)</ul>.*?<div class=\"section", source); ok {
 		section_trls = cap_sec_trls.groups[1]
-	} else do return false
-
-	if capture, ok := regex_match_scoped("<ul>(.*?)</ul>", section_trls); ok {
-		ite_trls, err := regex.create_iterator(capture.groups[1], "<li>.*?<div class=\"content\">(.*?)</div></li>")
+		ite_trls, err := regex.create_iterator(section_trls, "<li>.*?<div class=\"content\">(.*?)</div></li>")
 		trl_idx := 0
 		for trls, trls_idx in regex.match_iterator(&ite_trls) {
 			defer trl_idx += 1
@@ -117,7 +114,8 @@ translate :: proc(word: string) -> bool {
 			}
 			fmt.print("---\n")
 		}
-	}
+	} else do return false
+
 
 	fmt.printf("URL: {}\n", url)
 

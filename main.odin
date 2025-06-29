@@ -114,8 +114,7 @@ translate :: proc(word: string) -> bool {
 					ansi.color_ansi(.Cyan)
 					fmt.printf(" {}. {}\n", trl_idx+1, text)
 					ansi.color_ansi(.Default)
-				} else if type == "tl-also" do fmt.printf("\tAlso: {}\n", text)
-				else do fmt.printf("\t{}\n", text)
+				} else do fmt.printf("\t{}\n", text)
 			}
 			fmt.print("---\n")
 		}
@@ -182,7 +181,7 @@ search :: proc(word: string) -> bool {
 		}
 	}
 
-	{
+	if len(options) > 0 {
 		in_stream := os.stream_from_handle(os.stdin)
 		ch, sz, err := io.read_rune(in_stream)
 		if ch > '0' && ch <= '9' {

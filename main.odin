@@ -9,6 +9,7 @@ import "core:text/regex"
 import "core:strings"
 import "core:strconv"
 import "core:math"
+import "core:unicode/utf8"
 import "core:encoding/entity"
 import "core:encoding/json"
 import "core:encoding/csv"
@@ -37,27 +38,44 @@ main :: proc() {
 		{argr_any(), arga_set(&args.search)}
 	)
 
-	buffer_tls := make([dynamic]string, 0, 8); defer delete(buffer_tls)
-
 	if args.search != {} {
+		buffer_tls := make([dynamic]string, 0, 8); defer delete(buffer_tls)
 		word_ids := make(map[int]int); defer delete(word_ids)
 
-		tbword := rg_search(fmt.tprintf("\\d+,.*?,{}.*?,", args.search),  "data\\words.csv")
-		defer delete(tbword)
-		rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
-		for record, idx in csv.iterator_next(&rsword) {
-			word_id := strconv.atoi(record[0])
-			if word_id in word_ids do word_ids[word_id] += 1
-			else do word_ids[word_id] = 1
-		}
+		if is_cyrillic_rune(utf8.rune_at(args.search, 0)) {
+			tbword := rg_search(fmt.tprintf("\\d+,.*?,{}.*?,", args.search),  "data\\words.csv")
+			defer delete(tbword)
+			rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
+			for record, idx in csv.iterator_next(&rsword) {
+				word_id := strconv.atoi(record[0])
+				if word_id in word_ids do word_ids[word_id] += 1
+				else do word_ids[word_id] = 1
+			}
 
-		tbforms := rg_search(fmt.tprintf("^.*{}.*?,", args.search), "data\\words_forms.csv")
-		defer delete(tbforms)
-		rsforms : csv.Reader; csv_reader_scoped(&rsforms, tbforms)
-		for form_record, form_idx in csv.iterator_next(&rsforms) {
-			word_id := strconv.atoi(form_record[1])
-			if word_id in word_ids do word_ids[word_id] += 1
-			else do word_ids[word_id] = 1
+			tbforms := rg_search(fmt.tprintf("^.*{}.*?,", args.search), "data\\words_forms.csv")
+			defer delete(tbforms)
+			rsforms : csv.Reader; csv_reader_scoped(&rsforms, tbforms)
+			for form_record, form_idx in csv.iterator_next(&rsforms) {
+				word_id := strconv.atoi(form_record[1])
+				if word_id in word_ids do word_ids[word_id] += 1
+				else do word_ids[word_id] = 1
+			}
+		} else {
+			tbtls := rg_search(fmt.tprintf("\\d+,en,.*\\b{}\\b", args.search),  "data\\translations.csv")
+			defer delete(tbtls)
+			rstls : csv.Reader; csv_reader_scoped(&rstls, tbtls)
+			if regx, regxerr := regex.create(args.search); regxerr == nil {
+				defer regex.destroy_regex(regx)
+				for tls_record, tls_idx in csv.iterator_next(&rstls) {
+					capt, ok := regex.match(regx, tls_record[4])
+					defer regex.destroy_capture(capt)
+					if ok {
+						word_id := strconv.atoi(tls_record[2])
+						if word_id in word_ids do word_ids[word_id] += 1
+						else do word_ids[word_id] = 1
+					}
+				}
+			}
 		}
 
 		sb_search : strings.Builder
@@ -84,23 +102,36 @@ main :: proc() {
 			clear(&buffer_tls)
 			rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
 			for tl_record, tl_idx in csv.iterator_next(&rstsl) {
-				for tl in strings.split_iterator(&tl_record[4], ", ") {
-					append(&buffer_tls, tl)
-				}
+				append(&buffer_tls, strings.clone(tl_record[4]))
+			}
+			defer {
+				for t in buffer_tls do delete(t)
 			}
 
 			usage, _ := strings.replace_all(record[8], "\\n", "\n", context.temp_allocator)
-			print_result(record[3], record[11], buffer_tls[:], usage)
+			print_result(record[0], record[3], record[11], buffer_tls[:], usage)
 		}
 	}
 }
 
-print_result :: proc(accented, type: string, tls: []string, usage: string={}) {
+is_cyrillic_rune :: proc(r: rune) -> bool {
+	return (r >= 0x0400 && r <= 0x04FF) ||
+		(r >= 0x0500 && r <= 0x052F) ||
+		(r >= 0x2DE0 && r <= 0x2DFF) ||
+		(r >= 0xA640 && r <= 0xA69F) ||
+		(r >= 0x1C80 && r <= 0x1C8F)
+}
+
+
+print_result :: proc(id: string, accented, type: string, tls: []string, usage: string={}) {
 	ansi.color(.Yellow)
 	fmt.print(" ⏺ ")
 	print_accented(accented)
 	fmt.print(' ')
 	ansi.color(.Default)
+when ODIN_DEBUG {
+	fmt.printf(" {} ", id)
+}
 	fmt.printf("[{}]\n", type)
 
 	for tl in tls do fmt.printf("\t▶ {}\n", tl)

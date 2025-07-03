@@ -52,11 +52,11 @@ main :: proc() {
 				else do word_ids[word_id] = 1
 			}
 
-			tbforms := rg_search(fmt.tprintf("^.*{}.*?,", args.search), "data\\words_forms.csv")
+			tbforms := rg_search(fmt.tprintf(",{}", args.search), "data\\words_forms.csv")
 			defer delete(tbforms)
 			rsforms : csv.Reader; csv_reader_scoped(&rsforms, tbforms)
 			for form_record, form_idx in csv.iterator_next(&rsforms) {
-				word_id := strconv.atoi(form_record[1])
+				word_id := strconv.atoi(form_record[2])
 				if word_id in word_ids do word_ids[word_id] += 1
 				else do word_ids[word_id] = 1
 			}

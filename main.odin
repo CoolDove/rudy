@@ -64,7 +64,7 @@ main :: proc() {
 			tbtls := rg_search(fmt.tprintf("\\d+,en,.*\\b{}\\b", args.search),  "data\\translations.csv")
 			defer delete(tbtls)
 			rstls : csv.Reader; csv_reader_scoped(&rstls, tbtls)
-			if regx, regxerr := regex.create(args.search); regxerr == nil {
+			if regx, regxerr := regex.create(args.search, {.Case_Insensitive}); regxerr == nil {
 				defer regex.destroy_regex(regx)
 				for tls_record, tls_idx in csv.iterator_next(&rstls) {
 					capt, ok := regex.match(regx, tls_record[4])
@@ -147,13 +147,14 @@ when ODIN_DEBUG {
 	fmt.print("\n")
 }
 
-rg_search :: proc(pattern, file: string, allocator:= context.allocator) -> string {
+rg_search :: proc(pattern, file: string, ignore_case:= true, allocator:= context.allocator) -> string {
 	context.allocator = allocator
 	state, exeout, exeerr, err := os2.process_exec({
 		command = {"rg", pattern, file,
 			"--no-heading",
 			"--no-line-number",
 			"--color=never",
+			"--ignore-case" if ignore_case else "--case-sensitive"
 		},
 	}, context.allocator)
 	delete(exeerr)

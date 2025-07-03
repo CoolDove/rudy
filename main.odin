@@ -38,7 +38,7 @@ main :: proc() {
 		{argr_any(), arga_set(&args.search)}
 	)
 
-	if args.search != {} {
+	if args.search != {} {// search
 		buffer_tls := make([dynamic]string, 0, 8); defer delete(buffer_tls)
 		word_ids := make(map[int]int); defer delete(word_ids)
 
@@ -56,7 +56,7 @@ main :: proc() {
 			defer delete(tbforms)
 			rsforms : csv.Reader; csv_reader_scoped(&rsforms, tbforms)
 			for form_record, form_idx in csv.iterator_next(&rsforms) {
-				word_id := strconv.atoi(form_record[2])
+				word_id := strconv.atoi(form_record[1])
 				if word_id in word_ids do word_ids[word_id] += 1
 				else do word_ids[word_id] = 1
 			}
@@ -109,7 +109,43 @@ main :: proc() {
 			}
 
 			usage, _ := strings.replace_all(record[8], "\\n", "\n", context.temp_allocator)
-			print_result(record[0], record[3], record[11], buffer_tls[:], usage)
+			print_search_result(record[0], record[3], record[11], buffer_tls[:], usage)
+		}
+	} else if (args.word != {}) {// detail
+		tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", args.word), "data\\words.csv")
+		defer delete(tbword)
+		rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
+		word_id : int
+		for record, idx in csv.iterator_next(&rsword) {
+			word_id = strconv.atoi(record[0])
+			ansi.color(.Yellow)
+			fmt.printf(" ⏺ ")
+			print_accented(record[3])
+			ansi.color(.Default)
+			fmt.printf(" [{}]\n", record[11])
+			break
+		}
+		tsl := rg_search(fmt.tprintf(",en,{},", word_id), "data\\translations.csv")
+		defer delete(tsl)
+		rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
+		for tl_record, tl_idx in csv.iterator_next(&rstsl) {
+			fmt.printf("\t▶ {}\n", tl_record[4])
+			if tl_record[5] != {} do fmt.printf("Example:\n\t- {}\n\t- {}\n", tl_record[5], tl_record[6])
+			if tl_record[7] != {} do fmt.printf("Info:\n\t{}\n", tl_record[7])
+		}
+
+		fmt.print("\n")
+
+		forms := rg_search(fmt.tprintf("^\\d+,{},", word_id), "data\\words_forms.csv")
+		defer delete(forms)
+		rsforms : csv.Reader; csv_reader_scoped(&rsforms, forms)
+		for form_record, form_idx in csv.iterator_next(&rsforms) {
+			ftype := form_record[2]
+			fmt.printf(" - {}: ", ftype[3:])
+			ansi.color(.Yellow)
+			print_accented(form_record[4])
+			ansi.color(.Default)
+			fmt.print("\n")
 		}
 	}
 }
@@ -122,8 +158,7 @@ is_cyrillic_rune :: proc(r: rune) -> bool {
 		(r >= 0x1C80 && r <= 0x1C8F)
 }
 
-
-print_result :: proc(id: string, accented, type: string, tls: []string, usage: string={}) {
+print_search_result :: proc(id: string, accented, type: string, tls: []string, usage: string={}) {
 	ansi.color(.Yellow)
 	fmt.print(" ⏺ ")
 	print_accented(accented)

@@ -20,6 +20,7 @@ import ansi "ansi_code"
 
 Args :: struct {
 	search, word : string,
+	read : bool,
 }
 args : Args
 
@@ -41,10 +42,14 @@ main :: proc() {
 	args_read(
 		{argr_follow_by("-d"), arga_set(&args.word)},
 		{argr_follow_by("-д"), arga_set(&args.word)}, // in case you're using cyrillic
-		{argr_any(), arga_set(&args.search)}
+		{argr_is("--read"),    arga_set(&args.read)},
+		{argr_is("--читать"),  arga_set(&args.read)},
+		{argr_any(),           arga_set(&args.search)}
 	)
 
-	data_dir := filepath.join({ filepath.dir(os.args[0], context.temp_allocator), "data" }); defer delete(data_dir)
+
+	prog_dir := filepath.dir(os.args[0]); defer delete(prog_dir)
+	data_dir := filepath.join({ prog_dir, "data" }); defer delete(data_dir)
 	PATH_WORDS = filepath.join({ data_dir, "words.csv" })
 	PATH_FORMS = filepath.join({ data_dir, "words_forms.csv" })
 	PATH_TRANSLATIONS = filepath.join({ data_dir, "translations.csv" })
@@ -127,6 +132,7 @@ main :: proc() {
 		defer delete(tbword)
 		rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
 		word_id : int
+		word_bare : string;
 		for record, idx in csv.iterator_next(&rsword) {
 			word_id = strconv.atoi(record[0])
 			ansi.color(.Yellow)
@@ -134,8 +140,10 @@ main :: proc() {
 			print_accented(record[3])
 			ansi.color(.Default)
 			fmt.printf(" [{}]\n", record[11])
+			word_bare = strings.clone(record[2])
 			break
 		}
+		defer if word_bare != {} do delete(word_bare)
 		tsl := rg_search(fmt.tprintf(",en,{},", word_id), PATH_TRANSLATIONS)
 		defer delete(tsl)
 		rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
@@ -157,6 +165,36 @@ main :: proc() {
 			print_accented(form_record[4])
 			ansi.color(.Default)
 			fmt.print("\n")
+		}
+
+		// try to read
+		if args.read {
+			file_info := curl(fmt.tprintf("https://en.wiktionary.org/wiki/File:Ru-{}.ogg", word_bare))
+			defer delete(file_info)
+			file_url : string
+			if capt, ok := regex_match_scoped("audio id=\"mwe_player.*?src=\"(.*?)\"", file_info); ok {
+				file_url = fmt.aprintf("https:{}", capt.groups[1])
+				when ODIN_DEBUG do fmt.printf("url: {}\n", file_url)
+			} else {
+				when ODIN_DEBUG do fmt.printf("failed to parse file info\n")
+			}
+
+			if file_url == {} do return
+			defer delete(file_url)
+
+			when ODIN_DEBUG do fmt.printf("download audio from: {}\n", file_url)
+			audio :string= filepath.join({ prog_dir, fmt.tprintf("{}.ogg", word_bare) });
+			curl_download(file_url, audio)
+			if os.exists(audio) {
+				defer os.remove(audio)
+				state, exeout, exeerr, err := os2.process_exec({
+					command = {"ffplay", "-nodisp", "-autoexit", audio},
+				}, context.allocator)
+				delete(exeout)
+				delete(exeerr)
+			} else {
+				fmt.printf("failed to download audio file")
+			}
 		}
 	}
 }
@@ -205,6 +243,21 @@ rg_search :: proc(pattern, file: string, ignore_case:= true, allocator:= context
 	}, context.allocator)
 	delete(exeerr)
 	return string(exeout)
+}
+
+curl :: proc(url: string) -> string {
+	state, exeout, exeerr, err := os2.process_exec({
+		command = {"curl", "--ssl-no-revoke", url},
+	}, context.allocator)
+	delete(exeerr)
+	return string(exeout)
+}
+curl_download :: proc(url: string, file: string) {
+	state, exeout, exeerr, err := os2.process_exec({
+		command = {"curl", "--ssl-no-revoke", url, "-o", file},
+	}, context.allocator)
+	delete(exeout)
+	delete(exeerr)
 }
 
 print_accented :: proc(word: string) {

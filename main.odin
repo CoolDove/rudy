@@ -143,9 +143,8 @@ when ODIN_DEBUG {
 		for line in strings.split_lines_iterator(&usage) {
 			fmt.printf("\t{}\n", line)
 		}
-	} else {
-		fmt.print("\n")
 	}
+	fmt.print("\n")
 }
 
 rg_search :: proc(pattern, file: string, allocator:= context.allocator) -> string {

@@ -26,7 +26,7 @@ console_begin :: proc() {
 	GetConsoleMode(HANDLE(os.stdout), &prev_out_mode)
 	out_mode := prev_out_mode
 	out_mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING
-	out_mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT
+	// out_mode &= ~ENABLE_WRAP_AT_EOL_OUTPUT
 	SetConsoleMode(HANDLE(os.stdout), out_mode)
 }
 console_end :: proc() {

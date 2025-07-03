@@ -8,6 +8,7 @@ import "core:os/os2"
 import "core:text/regex"
 import "core:strings"
 import "core:strconv"
+import "core:path/filepath"
 import "core:math"
 import "core:unicode/utf8"
 import "core:encoding/entity"
@@ -30,6 +31,11 @@ csv_reader_scoped :: proc(r: ^csv.Reader, source: string) -> ^csv.Reader {
 	return r
 }
 
+
+PATH_WORDS : string
+PATH_TRANSLATIONS : string
+PATH_FORMS : string
+
 main :: proc() {
 	console_begin(); defer console_end()
 	args_read(
@@ -38,12 +44,17 @@ main :: proc() {
 		{argr_any(), arga_set(&args.search)}
 	)
 
+	data_dir := filepath.join({ filepath.dir(os.args[0], context.temp_allocator), "data" }); defer delete(data_dir)
+	PATH_WORDS = filepath.join({ data_dir, "words.csv" })
+	PATH_FORMS = filepath.join({ data_dir, "words_forms.csv" })
+	PATH_TRANSLATIONS = filepath.join({ data_dir, "translations.csv" })
+
 	if args.search != {} {// search
 		buffer_tls := make([dynamic]string, 0, 8); defer delete(buffer_tls)
 		word_ids := make(map[int]int); defer delete(word_ids)
 
 		if is_cyrillic_rune(utf8.rune_at(args.search, 0)) {
-			tbword := rg_search(fmt.tprintf("\\d+,.*?,{}.*?,", args.search),  "data\\words.csv")
+			tbword := rg_search(fmt.tprintf("\\d+,.*?,{}.*?,", args.search), PATH_WORDS)
 			defer delete(tbword)
 			rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
 			for record, idx in csv.iterator_next(&rsword) {
@@ -52,7 +63,7 @@ main :: proc() {
 				else do word_ids[word_id] = 1
 			}
 
-			tbforms := rg_search(fmt.tprintf(",{}", args.search), "data\\words_forms.csv")
+			tbforms := rg_search(fmt.tprintf(",{}", args.search), PATH_FORMS)
 			defer delete(tbforms)
 			rsforms : csv.Reader; csv_reader_scoped(&rsforms, tbforms)
 			for form_record, form_idx in csv.iterator_next(&rsforms) {
@@ -61,7 +72,7 @@ main :: proc() {
 				else do word_ids[word_id] = 1
 			}
 		} else {
-			tbtls := rg_search(fmt.tprintf("\\d+,en,.*\\b{}\\b", args.search),  "data\\translations.csv")
+			tbtls := rg_search(fmt.tprintf("\\d+,en,.*\\b{}\\b", args.search), PATH_TRANSLATIONS)
 			defer delete(tbtls)
 			rstls : csv.Reader; csv_reader_scoped(&rstls, tbtls)
 			if regx, regxerr := regex.create(args.search, {.Case_Insensitive}); regxerr == nil {
@@ -91,11 +102,11 @@ main :: proc() {
 			write_string(&sb_search, ",")
 			if idx < (wcount-1) do write_rune(&sb_search, '|')
 		}
-		result := rg_search(strings.to_string(sb_search), "data\\words.csv")
+		result := rg_search(strings.to_string(sb_search), PATH_WORDS)
 
 		rsresult : csv.Reader; csv_reader_scoped(&rsresult, result)
 		for record, idx in csv.iterator_next(&rsresult) {
-			tsl := rg_search(fmt.tprintf(",en,{},", strconv.atoi(record[0])), "data\\translations.csv")
+			tsl := rg_search(fmt.tprintf(",en,{},", strconv.atoi(record[0])), PATH_TRANSLATIONS)
 			defer delete(tsl)
 			if tsl == {} do continue
 
@@ -112,7 +123,7 @@ main :: proc() {
 			print_search_result(record[0], record[3], record[11], buffer_tls[:], usage)
 		}
 	} else if (args.word != {}) {// detail
-		tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", args.word), "data\\words.csv")
+		tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", args.word), PATH_WORDS)
 		defer delete(tbword)
 		rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
 		word_id : int
@@ -125,7 +136,7 @@ main :: proc() {
 			fmt.printf(" [{}]\n", record[11])
 			break
 		}
-		tsl := rg_search(fmt.tprintf(",en,{},", word_id), "data\\translations.csv")
+		tsl := rg_search(fmt.tprintf(",en,{},", word_id), PATH_TRANSLATIONS)
 		defer delete(tsl)
 		rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
 		for tl_record, tl_idx in csv.iterator_next(&rstsl) {
@@ -136,7 +147,7 @@ main :: proc() {
 
 		fmt.print("\n")
 
-		forms := rg_search(fmt.tprintf("^\\d+,{},", word_id), "data\\words_forms.csv")
+		forms := rg_search(fmt.tprintf("^\\d+,{},", word_id), PATH_FORMS)
 		defer delete(forms)
 		rsforms : csv.Reader; csv_reader_scoped(&rsforms, forms)
 		for form_record, form_idx in csv.iterator_next(&rsforms) {

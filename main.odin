@@ -33,6 +33,8 @@ csv_reader_scoped :: proc(r: ^csv.Reader, source: string) -> ^csv.Reader {
 }
 
 
+DIR_PROG : string
+
 PATH_WORDS : string
 PATH_TRANSLATIONS : string
 PATH_FORMS : string
@@ -50,6 +52,7 @@ main :: proc() {
 
 	prog_dir := filepath.dir(os.args[0]); defer delete(prog_dir)
 	data_dir := filepath.join({ prog_dir, "data" }); defer delete(data_dir)
+	DIR_PROG = prog_dir
 	PATH_WORDS = filepath.join({ data_dir, "words.csv" })
 	PATH_FORMS = filepath.join({ data_dir, "words_forms.csv" })
 	PATH_TRANSLATIONS = filepath.join({ data_dir, "translations.csv" })
@@ -109,7 +112,11 @@ main :: proc() {
 		}
 		result := rg_search(strings.to_string(sb_search), PATH_WORDS)
 
+
+		results_buffer : [5]string
+
 		rsresult : csv.Reader; csv_reader_scoped(&rsresult, result)
+		count : int
 		for record, idx in csv.iterator_next(&rsresult) {
 			tsl := rg_search(fmt.tprintf(",en,{},", strconv.atoi(record[0])), PATH_TRANSLATIONS)
 			defer delete(tsl)
@@ -124,80 +131,111 @@ main :: proc() {
 				for t in buffer_tls do delete(t)
 			}
 
+			sb : strings.Builder
+			strings.builder_init(&sb); defer strings.builder_destroy(&sb)
+			c := strings.builder_len(sb)
+			strings.write_string(&sb, record[2])
+			results_buffer[count%5] = strings.to_string(sb)[c:]
+
 			usage, _ := strings.replace_all(record[8], "\\n", "\n", context.temp_allocator)
-			print_search_result(record[0], record[3], record[11], buffer_tls[:], usage)
+			print_search_result(count%5+1, record[0], record[3], record[11], buffer_tls[:], usage)
+
+			count += 1
+			if (count>0 && count % 5 == 0) {
+				ansi.color_ansi(.Gray)
+				fmt.printf("- {} printed | press `Enter` to continue, other keys to break", count)
+				ansi.color_ansi(.Default)
+				fmt.print('\n')
+				b, _ := io.read_byte(os.stream_from_handle(os.stdin), nil)
+				if b > '0' && b < '6' {
+					idx := b - '0'
+					to_detail := results_buffer[idx-1]
+					detail(to_detail)
+					break
+				} else if b == 13 {// `ENTER`
+				} else {
+					break
+				}
+				results_buffer = {}
+			}
 		}
 	} else if (args.word != {}) {// detail
-		tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", args.word), PATH_WORDS)
-		defer delete(tbword)
-		rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
-		word_id : int
-		word_bare : string;
-		for record, idx in csv.iterator_next(&rsword) {
-			word_id = strconv.atoi(record[0])
-			ansi.color(.Yellow)
-			fmt.printf(" ⏺ ")
-			print_accented(record[3])
-			ansi.color(.Default)
-			fmt.printf(" [{}]\n", record[11])
-			word_bare = strings.clone(record[2])
-			break
-		}
-		defer if word_bare != {} do delete(word_bare)
-		tsl := rg_search(fmt.tprintf(",en,{},", word_id), PATH_TRANSLATIONS)
-		defer delete(tsl)
-		rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
-		for tl_record, tl_idx in csv.iterator_next(&rstsl) {
-			fmt.printf("\t▶ {}\n", tl_record[4])
-			if tl_record[5] != {} do fmt.printf("Example:\n\t- {}\n\t- {}\n", tl_record[5], tl_record[6])
-			if tl_record[7] != {} do fmt.printf("Info:\n\t{}\n", tl_record[7])
-		}
+		detail(args.word)
+	}
+}
 
+
+detail :: proc(word: string) {
+	tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", word), PATH_WORDS)
+	defer delete(tbword)
+	rsword : csv.Reader; csv_reader_scoped(&rsword, tbword)
+	word_id : int
+	word_bare : string;
+	for record, idx in csv.iterator_next(&rsword) {
+		word_id = strconv.atoi(record[0])
+		ansi.color(.Yellow)
+		fmt.printf(" ⏺ ")
+		print_accented(record[3])
+		ansi.color(.Default)
+		fmt.printf(" [{}]\n", record[11])
+		word_bare = strings.clone(record[2])
+		break
+	}
+	defer if word_bare != {} do delete(word_bare)
+	tsl := rg_search(fmt.tprintf(",en,{},", word_id), PATH_TRANSLATIONS)
+	defer delete(tsl)
+	rstsl : csv.Reader; csv_reader_scoped(&rstsl, tsl)
+	for tl_record, tl_idx in csv.iterator_next(&rstsl) {
+		fmt.printf("\t▶ {}\n", tl_record[4])
+		if tl_record[5] != {} do fmt.printf("Example:\n\t- {}\n\t- {}\n", tl_record[5], tl_record[6])
+		if tl_record[7] != {} do fmt.printf("Info:\n\t{}\n", tl_record[7])
+	}
+
+	fmt.print("\n")
+
+	forms := rg_search(fmt.tprintf("^\\d+,{},", word_id), PATH_FORMS)
+	defer delete(forms)
+	rsforms : csv.Reader; csv_reader_scoped(&rsforms, forms)
+	for form_record, form_idx in csv.iterator_next(&rsforms) {
+		ftype := form_record[2]
+		fmt.printf(" - {}: ", ftype[3:])
+		ansi.color(.Yellow)
+		print_accented(form_record[4])
+		ansi.color(.Default)
 		fmt.print("\n")
+	}
 
-		forms := rg_search(fmt.tprintf("^\\d+,{},", word_id), PATH_FORMS)
-		defer delete(forms)
-		rsforms : csv.Reader; csv_reader_scoped(&rsforms, forms)
-		for form_record, form_idx in csv.iterator_next(&rsforms) {
-			ftype := form_record[2]
-			fmt.printf(" - {}: ", ftype[3:])
-			ansi.color(.Yellow)
-			print_accented(form_record[4])
-			ansi.color(.Default)
-			fmt.print("\n")
+	// try to read
+	if args.read {
+		file_info := curl(fmt.tprintf("https://en.wiktionary.org/wiki/File:Ru-{}.ogg", word_bare))
+		defer delete(file_info)
+		file_url : string
+		if capt, ok := regex_match_scoped("audio id=\"mwe_player.*?src=\"(.*?)\"", file_info); ok {
+			file_url = fmt.aprintf("https:{}", capt.groups[1])
+			when ODIN_DEBUG do fmt.printf("url: {}\n", file_url)
+		} else {
+			when ODIN_DEBUG do fmt.printf("failed to parse file info\n")
 		}
 
-		// try to read
-		if args.read {
-			file_info := curl(fmt.tprintf("https://en.wiktionary.org/wiki/File:Ru-{}.ogg", word_bare))
-			defer delete(file_info)
-			file_url : string
-			if capt, ok := regex_match_scoped("audio id=\"mwe_player.*?src=\"(.*?)\"", file_info); ok {
-				file_url = fmt.aprintf("https:{}", capt.groups[1])
-				when ODIN_DEBUG do fmt.printf("url: {}\n", file_url)
-			} else {
-				when ODIN_DEBUG do fmt.printf("failed to parse file info\n")
-			}
+		if file_url == {} do return
+		defer delete(file_url)
 
-			if file_url == {} do return
-			defer delete(file_url)
-
-			when ODIN_DEBUG do fmt.printf("download audio from: {}\n", file_url)
-			audio :string= filepath.join({ prog_dir, fmt.tprintf("{}.ogg", word_bare) });
-			curl_download(file_url, audio)
-			if os.exists(audio) {
-				defer os.remove(audio)
-				state, exeout, exeerr, err := os2.process_exec({
-					command = {"ffplay", "-nodisp", "-autoexit", audio},
-				}, context.allocator)
-				delete(exeout)
-				delete(exeerr)
-			} else {
-				fmt.printf("failed to download audio file")
-			}
+		when ODIN_DEBUG do fmt.printf("download audio from: {}\n", file_url)
+		audio :string= filepath.join({ DIR_PROG, fmt.tprintf("{}.ogg", word_bare) });
+		curl_download(file_url, audio)
+		if os.exists(audio) {
+			defer os.remove(audio)
+			state, exeout, exeerr, err := os2.process_exec({
+				command = {"ffplay", "-nodisp", "-autoexit", audio},
+			}, context.allocator)
+			delete(exeout)
+			delete(exeerr)
+		} else {
+			fmt.printf("failed to download audio file")
 		}
 	}
 }
+
 
 is_cyrillic_rune :: proc(r: rune) -> bool {
 	return (r >= 0x0400 && r <= 0x04FF) ||
@@ -207,9 +245,9 @@ is_cyrillic_rune :: proc(r: rune) -> bool {
 		(r >= 0x1C80 && r <= 0x1C8F)
 }
 
-print_search_result :: proc(id: string, accented, type: string, tls: []string, usage: string={}) {
+print_search_result :: proc(idx: int, id: string, accented, type: string, tls: []string, usage: string={}) {
 	ansi.color(.Yellow)
-	fmt.print(" ⏺ ")
+	fmt.printf(" {}⏺ ", idx)
 	print_accented(accented)
 	fmt.print(' ')
 	ansi.color(.Default)

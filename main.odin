@@ -141,15 +141,14 @@ main :: proc() {
 			print_search_result(count%5+1, record[0], record[3], record[11], buffer_tls[:], usage)
 
 			count += 1
-			if (count>0 && count % 5 == 0) {
+			if (count>0 && (count % 5 == 0)) {
 				ansi.color_ansi(.Gray)
 				fmt.printf("- {} printed | press `Enter` to continue, other keys to break", count)
 				ansi.color_ansi(.Default)
 				fmt.print('\n')
-				b, _ := io.read_byte(os.stream_from_handle(os.stdin), nil)
-				if b > '0' && b < '6' {
-					idx := b - '0'
-					to_detail := results_buffer[idx-1]
+				b := wait_key()
+				if idx, ok := _is_valid_idx(b); ok {
+					to_detail := results_buffer[idx]
 					detail(to_detail)
 					break
 				} else if b == 13 {// `ENTER`
@@ -159,11 +158,40 @@ main :: proc() {
 				results_buffer = {}
 			}
 		}
+		if count>0 && count%5 != 0 {
+			ansi.color_ansi(.Gray)
+			fmt.printf("- {} printed | press `Enter` to continue, other keys to break", count)
+			ansi.color_ansi(.Default)
+			fmt.print('\n')
+			b := wait_key()
+			if idx, ok := _is_valid_idx(b, count%5); ok {
+				to_detail := results_buffer[idx]
+				detail(to_detail)
+			}
+			results_buffer = {}
+		}
+
+		_is_valid_idx :: proc(b: u8, max:int=9) -> (int, bool) {
+			if b > '0' && b <= u8('0' + max) {// '1' ~ '{max}'
+				return int(b - '0')-1, true
+			} else {
+				if b == 'a' && max > 0 do return 0, true
+				else if b == 's' && max > 1 do return 1, true
+				else if b == 'd' && max > 2 do return 2, true
+				else if b == 'f' && max > 3 do return 3, true
+				else if b == 'g' && max > 4 do return 4, true
+			}
+			return 0, false
+		}
 	} else if (args.word != {}) {// detail
 		detail(args.word)
 	}
 }
 
+wait_key :: proc() -> u8 {
+	b, _ := io.read_byte(os.stream_from_handle(os.stdin), nil)
+	return b
+}
 
 detail :: proc(word: string) {
 	tbword := rg_search(fmt.tprintf("\\d+,\\d*,{}.*?,", word), PATH_WORDS)
@@ -173,7 +201,7 @@ detail :: proc(word: string) {
 	word_bare : string;
 	for record, idx in csv.iterator_next(&rsword) {
 		word_id = strconv.atoi(record[0])
-		ansi.color(.Yellow)
+		ansi.color(.Cyan)
 		fmt.printf(" ⏺ ")
 		print_accented(record[3])
 		ansi.color(.Default)
@@ -247,7 +275,7 @@ is_cyrillic_rune :: proc(r: rune) -> bool {
 
 print_search_result :: proc(idx: int, id: string, accented, type: string, tls: []string, usage: string={}) {
 	ansi.color(.Yellow)
-	fmt.printf(" {}⏺ ", idx)
+	fmt.printf(" {}. ", idx)
 	print_accented(accented)
 	fmt.print(' ')
 	ansi.color(.Default)

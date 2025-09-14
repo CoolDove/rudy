@@ -1,2 +1,5 @@
 *.exe
+*.pdb
 /data/
+.build/
+/temp/

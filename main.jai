@@ -7,28 +7,30 @@ main :: () {
 
 
 	region_timer("main");
-
 	file := read_entire_file("temp\\words.txt");
 	results := find_substring(file, args[1], temp);
-	for < results {
-		begin := it;
-		end   := it;
-		while begin > 0 {
-			if file[begin] == #char "\n" {
-				break;
-			} else {
-				begin -= 1;
+	{
+		region_timer("output");
+		for < results {
+			begin := it;
+			end   := it;
+			while begin > 0 {
+				if file[begin] == #char "\n" {
+					break;
+				} else {
+					begin -= 1;
+				}
 			}
-		}
-		line := 0;
-		while end < file.count {
-			if file[end] == #char "\n" {
-				line += 1;
-				if line == 2 break;
+			line := 0;
+			while end < file.count {
+				if file[end] == #char "\n" {
+					line += 1;
+					if line == 2 break;
+				}
+				end += 1;
 			}
-			end += 1;
+			print(". %\n", slice(file, begin+1, end-begin));
 		}
-		print("---\n%\n\n", slice(file, begin, end-begin));
 	}
 }
 
@@ -45,36 +47,33 @@ words : [1024 * 100]Word;
 	// dc.do_output = false;
 	dc.output_executable_name = "rudy";
 	set_build_options_dc(dc);
+
 	words_txt, ok := read_entire_file("temp\\words.txt", log_errors=false);
 	if !ok {
 		process_raw_csv(true);
-	} else {
-		{
-			region_timer("read processed words");
-			words_txt, ok = read_entire_file("temp\\words.txt", log_errors=false);
-			defer free(words_txt);
-			if !ok {
-				print("Failed to read temp\\words.txt");
-				return;
-			}
-
-			for:string_by_line words_txt {
-				word_id := it_index / 2;
-				w := *words[word_id];
-				w.id = word_id;
-				idx := it_index % 2;
-				if idx == {
-					case 0;
-						w.word = it;
-					case 1;
-						w.translation = it;
-				}
-			}
-		}
-		// for 10..20 {
-		// 	print("word %: %\n", it, words[it]);
-		// }
 	}
+
+	region_timer("read processed words");
+	words_txt, ok = read_entire_file("temp\\words.txt", log_errors=false);
+	defer free(words_txt);
+	if !ok {
+		print("Failed to read temp\\words.txt");
+		return;
+	}
+
+	for:string_by_line words_txt {
+		word_id := it_index / 2;
+		w := *words[word_id];
+		w.id = word_id;
+		idx := it_index % 2;
+		if idx == {
+			case 0;
+				w.word = it;
+			case 1;
+				w.translation = it;
+		}
+	}
+
 }
 
 process_raw_csv :: (save: bool) {
